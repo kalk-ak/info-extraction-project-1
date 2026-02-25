@@ -21,10 +21,11 @@ FetchContent_MakeAvailable(spdlog)
 
 
 # Define the sources for the executable
-vars(
+# NOTE: Source codes are set in the SRC directory, and header files are set in the include directory
+set(
 	SOURCES
-	main.cpp
-	HMM.cpp
+	src/main.cpp
+	src/HMM.cpp
 )
 # create the executable
 add_executable(
@@ -33,7 +34,7 @@ add_executable(
 )
 
 # Use C++ 17
-target_compile_features(daq_server PRIVATE cxx_std_17)
+target_compile_features(HMM PRIVATE cxx_std_17)
 
 # All headers are in the include directory, so add it to the include path
 target_include_directories(HMM PRIVATE include)

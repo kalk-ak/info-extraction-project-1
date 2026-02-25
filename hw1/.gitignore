@@ -1,1 +1,6 @@
+# Ignore the build directory, compiled files, and CMake caches
+build/
+
+# Ignore the compile comands so that i don't leak my directory
+compile_commands.json
 *.pdf
