@@ -48,8 +48,31 @@ HMM::HMM(std::filesystem::path training_dataset) : training_dataset(training_dat
         // populate the dataset
         this->data.push_back(word[0]);
 
-        // add to the set to keep tracck of unique characters
-        unique_characters.insert(word[0]);
+        // check if the character has been seen before, if not add it to the state_to_index map and
+        // assign it a unique index
+        if (this->state_to_index.find(word[0]) == this->state_to_index.end())
+        {
+            // add it and assign a new index
+            this->state_to_index[word[0]] = unique_index;
+            unique_index += 1;
+        }
+
+        // print a summary of the dataset
+        std::stringstream output;
+        output << "Dataset loaded successfully. Total entries: " << index << "\n"
+               << "Unique characters: " << unique_index + 1 << "\n"
+               << "Skipped entries: " << skipped_entries << std::endl;
+
+        spdlog::info(output);
+
+        // -----------------------INITILIZE THE PARAMETERS-----------------------
+        // TODO: Done in the main function by calling the initialize_trainsition_probabilities and
+        // initialize_emission_probabilities
+
+        // --------------CALCULATE THE ALPHA, BETA AND GAMMA PROBABILITIES--------
+        // Then calculate the alpha, beta and gamma probabilities for the current dataset using the
+        // initilized parameters
+        this->calculate_alpha_beta_gamma();
     }
     // print a summary of the dataset
     std::cout << "Dataset loaded successfully. Total entries: " << index << "\n"
