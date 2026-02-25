@@ -8,10 +8,12 @@ class HMM
     //
     // Responsible for reading the dataset and storing it in memory and initilizing the parameters
     // randomly
-    HMM(std::filesystem::path training_dataset, int len_data);
+    HMM(std::filesystem::path training_dataset);
 
     // Destructor for the HMM. Responsible for closing the file if needed and releasing the
     // initilized data from memory
+    // HACK: Using modern C++ features like std::vector and std::filesystem, we can rely on the
+    // automatic memory
     ~HMM();
 
     // Used the BAUM welch algorithm to train the HMM for num_itterations
