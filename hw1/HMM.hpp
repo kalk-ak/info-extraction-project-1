@@ -43,8 +43,9 @@ class HMM
     std::vector<double> beta;  // cache for backward probabilities
     std::vector<double> gamma; // cache for state probabilities
 
-    // TODO: Create a helper function to load the data in memory
-    // or initilize a generator for it
+    // function to calculate the alpha, beta and gamma probabilities for the current dataset. Called
+    // from the train function
+    void calculate_alpha_beta_gamma();
 
     // called from train function to update the trainsitions
     void update_transition();
