@@ -1,4 +1,3 @@
-#pragma once
 #include <filesystem>
 #include <vector>
 
@@ -20,6 +19,11 @@ class HMM
 
   private:
     std::filesystem::path training_dataset;
+
+    // Pointer to the dataset. Allocated in the constructor and deallocated in the destructor
+    // Using the heap so that the code can be used for much bigger datasets than the memory can hold
+    // at once. The data can be loaded in batches in the train function
+    std::vector<char> *data;
 
     // All these probabilities are initilized when the Constructor is called and updated when the
     // train function is called
