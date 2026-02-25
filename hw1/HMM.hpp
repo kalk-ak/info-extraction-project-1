@@ -1,4 +1,5 @@
 #include <filesystem>
+#include <optional>
 #include <vector>
 
 class HMM
@@ -18,6 +19,17 @@ class HMM
 
     // Used the BAUM welch algorithm to train the HMM for num_itterations
     void train(int num_itterations);
+
+    void print_parameters() const; // for debugging purposes, prints the transition and emission
+                                   // probabilities to the console
+
+    bool initialize_trainsition_probabilities(
+        bool randomly = false, const std::vector<std::vector<int>> &weights =
+                                   {}); // initializes the transition probabilities randomly.
+                                        // Returns true if successful, false otherwise
+    // Called to initialize_trainsition_probabilities in main
+    bool initialize_emission_probabilities(bool randomly = false,
+                                           const std::vector<std::vector<int>> &weights = {});
 
   private:
     std::filesystem::path training_dataset;

@@ -1,4 +1,5 @@
 #include "HMM.hpp"
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -56,8 +57,18 @@ HMM::HMM(std::filesystem::path training_dataset) : training_dataset(training_dat
               << "Skipped entries: " << skipped_entries << std::endl;
 
     // -----------------------INITILIZE THE PARAMETERS-----------------------
+    // TODO: Done in the main function by calling the initialize_trainsition_probabilities and
+    // initialize_emission_probabilities
 
-    // TODO: Initialize the transition and emission probabilities randomly
+    // --------------CALCULATE THE ALPHA, BETA AND GAMMA PROBABILITIES--------
+    // Then calculate the alpha, beta and gamma probabilities for the current dataset using the
+    // initilized parameters
+    this->calculate_alpha_beta_gamma();
+}
+
+bool HMM::initialize_emission_probabilities(bool randomly,
+                                            const std::vector<std::vector<int>> &weights)
+{
 }
 
 void HMM::train(int num_itterations)
