@@ -46,7 +46,11 @@ HMM<T>::HMM(std::filesystem::path training_dataset) : training_dataset(training_
     // and assign it a probabilities of zero if it showes up in the test data and not in training
 
     // Count the white spaces
-    file >> std::noskipws;
+    if constexpr (std::is_same_v<T, char>)
+    {
+        spdlog::info("Reading test dataset as characters, including whitespace.");
+        file >> std::noskipws;
+    }
     while (file >> token)
     {
 
@@ -305,6 +309,7 @@ double log_sum_exp(double a, double b)
         return b + std::log(1.0 + std::exp(a - b));
 }
 
+//
 template <typename T>
 void HMM<T>::train(int num_itterations, const std::filesystem::path &test_dataset_path,
                    const std::string &log_csv_path)
@@ -336,26 +341,45 @@ void HMM<T>::train(int num_itterations, const std::filesystem::path &test_datase
             "train called with out initial state probabilities being initialized");
     }
 
-    // cahce the number of states and the number of steps in the dataset for easy access
-    const size_t num_states =
-        this->trainsition_probabilities.size(); // Use the actual number of HMM states
-    const size_t len_data = this->data.size();
+    // cache the number of states and the number of steps in the dataset for easy access
+    const size_t num_states = this->trainsition_probabilities.size();
+    const size_t len_train = this->data.size();
 
     // initialize the alpha, beta, and gamma vectors
-    this->alpha.assign(num_states, std::vector<double>(len_data, 0.0));
-    this->beta.assign(num_states, std::vector<double>(len_data, 0.0));
-    this->gamma.assign(num_states, std::vector<double>(len_data, 0.0));
+    this->alpha.assign(num_states, std::vector<double>(len_train, 0.0));
+    this->beta.assign(num_states, std::vector<double>(len_train, 0.0));
+    this->gamma.assign(num_states, std::vector<double>(len_train, 0.0));
 
-    // ----------------------- CSV loggere for plotting -----------------------
+    // ----------------------- LOAD TEST DATASET -----------------------
+    std::vector<T> test_data;
+    std::ifstream test_file(test_dataset_path);
+
+    // HACK: stop the stream from eating spaces in the test file to include white spaec
+
+    if constexpr (std::is_same_v<T, char>)
+    {
+        spdlog::info("Reading test dataset as characters, including whitespace.");
+        test_file >> std::noskipws;
+    }
+
+    T test_token;
+    while (test_file >> test_token)
+    {
+        test_data.push_back(test_token);
+    }
+    const size_t len_test = test_data.size();
+
+    // ----------------------- CSV LOGGER SETUP -----------------------
+    // open CSV for logging metrics to plot later
     std::ofstream log_file(log_csv_path);
     log_file << "k,train_log_prob,test_log_prob";
 
-    // Dynamically create headers for every single state and token (e.g., q_a_0, q_a_1)
+    // dynamically create headers for every single state and token (e.g., q_a_0, q_a_1)
     for (const T &token : this->sorted_states)
     {
         for (size_t s = 0; s < num_states; s++)
         {
-            // If the token is a space, print 'space' so the CSV header doesn't break
+            // check if the token is a space to avoid breaking the CSV header
             if (token == ' ')
                 log_file << ",q_space_" << s;
             else
@@ -364,26 +388,34 @@ void HMM<T>::train(int num_itterations, const std::filesystem::path &test_datase
     }
     log_file << "\n";
 
-    // Run Baum-Welch
+    // ----------------------- BAUM-WELCH LOOP -----------------------
+    // Run for the number of iterations specified in the assignment
     for (int iter = 1; iter <= num_itterations; iter++)
     {
+        // PERF: execute E-Step and M-Step on training data
         this->calculate_alpha_beta_gamma();
         this->update_transition();
         this->update_emission();
 
-        // Calculate Log-Probs
-        double train_log_prob = -std::numeric_limits<double>::infinity();
+        // ----------------------- CALCULATE LOG PROBABILITIES -----------------------
+        // log P(A) is found by summing the final column of the alpha matrix in log space
+        double train_log_prob_total = -std::numeric_limits<double>::infinity();
         for (size_t s = 0; s < num_states; s++)
         {
-            train_log_prob = log_sum_exp(train_log_prob, this->alpha[s][len_data - 1]);
+            train_log_prob_total = log_sum_exp(train_log_prob_total, this->alpha[s][len_train - 1]);
         }
-        train_log_prob /= len_data;
-        double test_log_prob = this->evaluate(test_data);
 
-        // ----------------------- LOGGING EVERY TOKEN -----------------------
-        log_file << iter << "," << train_log_prob << "," << test_log_prob;
+        // calculate average log-probability for Training Set A
+        double avg_train_log_prob = train_log_prob_total / len_train;
 
-        // Loop through all tokens and all states using the pre-existing sorted_states
+        // calculate average log-probability for Test Set B
+        // PERF: uses the standalone evaluate function
+        double avg_test_log_prob = this->evaluate(test_data);
+
+        // ----------------------- LOGGING DATA -----------------------
+        log_file << iter << "," << avg_train_log_prob << "," << avg_test_log_prob;
+
+        // log every emission probability for every state and character
         for (size_t t_idx = 0; t_idx < this->sorted_states.size(); t_idx++)
         {
             for (size_t s = 0; s < num_states; s++)
@@ -393,14 +425,13 @@ void HMM<T>::train(int num_itterations, const std::filesystem::path &test_datase
         }
         log_file << "\n";
 
-        if (iter % 10 == 0)
+        if (iter % 10 == 0 || iter == 1)
         {
-            spdlog::info("Iteration {} | Train LL: {:.4f} | Test LL: {:.4f}", iter, train_log_prob,
-                         test_log_prob);
+            spdlog::info("Iteration {} | Train Avg LL: {:.6f} | Test Avg LL: {:.6f}", iter,
+                         avg_train_log_prob, avg_test_log_prob);
         }
     }
 }
-//
 
 // PERF: Optimized to run as fast as possible
 template <typename T> void HMM<T>::calculate_alpha_beta_gamma()
@@ -575,8 +606,15 @@ template <typename T> double HMM<T>::test(const std::filesystem::path &test_data
     std::vector<T> test_data;
     T token;
 
+    // if we are reading characters, we want to include whitespace as tokens, so we need to set the
+    // file stream to ignore whitespace
+    if constexpr (std::is_same_v<T, char>)
+    {
+        spdlog::info("Reading test dataset as characters, including whitespace.");
+        test_file >> std::noskipws;
+    }
+
     // Read the test data into memory
-    test_file >> std::noskipws; // Don't skip whitespace characters
     while (test_file >> token)
     {
         test_data.push_back(token);
@@ -600,6 +638,8 @@ template <typename T> double HMM<T>::evaluate(const std::vector<T> &eval_data)
     int first_token_index = this->states_to_index[eval_data[0]];
     for (int state = 0; state < num_states; state++)
     {
+        // ISSUE: Create a function that returns the prob if file exists or else 0
+        // there could be cases where our token is in the training set but not in the test set
         eval_alpha[state][0] = std::log(this->initial_state_probabilities[state]) +
                                std::log(this->emission_probabilities[state][first_token_index]);
     }
@@ -680,4 +720,8 @@ template <typename T> void HMM<T>::load_model(const std::filesystem::path &filen
 }
 
 // Add this to the absolute bottom of HMM.cpp, after all functions
+// At the bottom of HMM.cpp
 template class HMM<char>;
+template class HMM<int>;
+template class HMM<double>;
+template class HMM<float>;

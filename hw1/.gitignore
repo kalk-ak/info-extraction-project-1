@@ -4,3 +4,13 @@ build/
 # Ignore the compile comands so that i don't leak my directory
 compile_commands.json
 *.pdf
+
+
+writeup.md
+gitlog.txt
+
+
+models/
+
+# Clang cache
+.cache/

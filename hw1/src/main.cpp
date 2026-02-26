@@ -1,4 +1,14 @@
-int main()
+#include "HMM.hpp"
+#include <filesystem>
+#include <spdlog/spdlog.h>
+#include <string>
+#include <vector>
+
+namespace fs = std::filesystem;
+
+// helper function to run the HMM logic for different data types
+template <typename T>
+void run_hmm(int num_states, const fs::path &data_dir, const fs::path &models_dir)
 {
     // setup input file paths
     fs::path train_file = data_dir / "textA-1.txt";
@@ -14,7 +24,9 @@ int main()
         HMM<T> hmm(train_file);
 
         // check if we already have a saved model to skip training
-        if (fs::exists(model_file))
+        // ISSUE: Figure out a better way to manage the cached parameters and check if the training
+        // datas, num_iterations, and parameters are the same
+        if (fs::exists(model_file) and false)
         {
             spdlog::info("Found existing {}-state model. Loading...", num_states);
             hmm.load_model(model_file);
@@ -63,6 +75,7 @@ int main()
             hmm.initialize_initial_state_probabilities(false, pi);
 
             // run Baum-Welch training for 600 iterations
+            // NOTE: Change here the number of iterations
             int num_iterations = 600;
             spdlog::info("Training and evaluating for {} iterations...", num_iterations);
 
@@ -132,10 +145,6 @@ int main(int argc, char *argv[])
         else if (data_type == "float")
         {
             run_hmm<float>(num_states, data_dir, models_dir);
-        }
-        else if (data_type == "string")
-        {
-            run_hmm<std::string>(num_states, data_dir, models_dir);
         }
         else
         {

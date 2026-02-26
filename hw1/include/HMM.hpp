@@ -17,13 +17,20 @@ template <typename T> class HMM
     // initilized data from memory
     // HACK: Using modern C++ features like std::vector and std::filesystem, we can rely on the
     // automatic memory
-    ~HMM();
+    ~HMM() = default;
 
     // Used the BAUM welch algorithm to train the HMM for num_itterations
-    void train(int num_itterations);
+    void train(int num_itterations, const std::filesystem::path &test_dataset_path,
+               const std::string &log_csv_path);
 
-    void print_parameters() const; // for debugging purposes, prints the transition and emission
-                                   // probabilities to the console
+    // NOTE: Wrapper around the private evaluate() method for standalone inference
+    // test the trained HMM on a test dataset and return the average log-probability of the test
+    // dataset under the trained model
+    double test(const std::filesystem::path &test_dataset_path);
+
+    // Save and Load the trained model parameters
+    void save_model(const std::filesystem::path &filename) const;
+    void load_model(const std::filesystem::path &filename);
 
     void initialize_initial_state_probabilities(
         bool randomly = false, const std::vector<double> &weights = {}); // initializes the
@@ -65,7 +72,7 @@ template <typename T> class HMM
         states_to_index; // Maps each state to a unique index for easy access in the transition and
                          // emission probability matrices
 
-    std::vector<double> initial_state_probabilities; // 'pi' in HMM literature
+    std::vector<double> initial_state_probabilities; //  'pi' in HMM literature
 
     // NOTE: n x n matrix where n is the number of states in the HMM
     std::vector<std::vector<double>>
@@ -93,4 +100,7 @@ template <typename T> class HMM
 
     // Called from the train function to update the emission probabilities
     void update_emission();
+
+    // Calculates the average log-probability of a given dataset: (1 / |Data|) * log P(Data)
+    double evaluate(const std::vector<T> &eval_data);
 };
