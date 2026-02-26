@@ -161,6 +161,8 @@ void HMM<T>::initialize_emission_probabilities(int num_states, bool randomly,
             }
         }
     }
+
+    this->emission_initialized = true;
 }
 
 template <typename T>
@@ -226,16 +228,99 @@ void HMM<T>::initialize_trainsition_probabilities(int num_states, bool randomly,
             }
         }
     }
+
+    this->transition_initialized = true;
+}
+
+template <typename T>
+void HMM<T>::initialize_initial_state_probabilities(bool randomly,
+                                                    const std::vector<std::vector<double>> &weights)
+{
+
+    if (not this->constructor_initialized)
+    {
+        spdlog::error("initialize_trainsition_probabilities called with out HMM being initialized");
+        throw std::runtime_error(
+            "initialize_trainsition_probabilities called with out HMM being initialized");
+    }
+
+    if (not this->emission_initialized)
+    {
+        spdlog::error("initialize_trainsition_probabilities called with out emission probabilities "
+                      "being initialized");
+        throw std::runtime_error("initialize_trainsition_probabilities called with out emission "
+                                 "probabilities being initialized");
+    }
+
+    // NOTE: Here weights is a matrix of size num_states x num_observations where weights[i][j] is
+    // the weight for the
+
+    // assert that the weights are provided if randomly is false
+    if (not randomly and weights.empty())
+    {
+        spdlog::error("Must provide weights for the initial state probabilities or set randomly "
+                      "flag to true");
+        throw std::invalid_argument("Must provide weights for the initial state probabilities or "
+                                    "set randomly flag to true");
+    }
+
+    if (not randomly)
+    {
+        this->trainsition_probabilities = weights;
+        //
+        // Simple just copy the values from weights (=) here is copy constructor for the vector of
+        // vectors
+    }
+    else
+    {
+        int num_states = this->states.size(); // number of unique characters in the dataset, which
+                                              // is the number of states and observations in the HMM
+
+        // variable to modify the original transition probabilities
+        std::vector<double> &distribution = this->initial_state_probabilities;
+
+        // A hardware entropy source (random_device) seeds the Mersenne Twister engine
+        std::random_device rd;
+        std::mt19937 gen(rd());
+
+        // assign equal probabilities for all states
+        int probabilities = 1 / num_states;
+
+        for (auto &i : this->initial_state_probabilities)
+            i = probabilities;
+    }
+
+    this->initial_state_probabilities_initialized = true;
 }
 
 template <typename T> void HMM<T>::train(int num_itterations)
 {
-    for (int i = 0; i < num_itterations; i++)
+    // -------------------- CHECK IF EVERYTING IS INITIALIZED--------------------
+    if (not this->constructor_initialized)
     {
-        // TODO: Add training logic here
-        // 1. Calculate the forward and backward probabilities using the current parameters
-        // 2. Update the transition and emission probabilities using the calculated
-        // probabilities
-        // 3. Repeat for num_itterations
+        spdlog::error("train called with out HMM being initialized");
+        throw std::runtime_error("train called with out HMM being initialized");
     }
+
+    if (not this->transition_initialized)
+    {
+        spdlog::error("train called with out transition probabilities being initialized");
+        throw std::runtime_error(
+            "train called with out transition probabilities being initialized");
+    }
+
+    if (not this->emission_initialized)
+    {
+        spdlog::error("train called with out emission probabilities being initialized");
+        throw std::runtime_error("train called with out emission probabilities being initialized");
+    }
+
+    if (not this->initial_state_probabilities_initialized)
+    {
+        spdlog::error("train called with out initial state probabilities being initialized");
+        throw std::runtime_error(
+            "train called with out initial state probabilities being initialized");
+    }
+
+    // --------------------BAUM WELCH ALGORITHM--------------------
 }
