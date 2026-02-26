@@ -1,8 +1,10 @@
 #include <filesystem>
 #include <optional>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
-class HMM
+template <typename T> class HMM
 {
   public:
     // Constructor for the HMM.
@@ -23,13 +25,15 @@ class HMM
     void print_parameters() const; // for debugging purposes, prints the transition and emission
                                    // probabilities to the console
 
-    bool initialize_trainsition_probabilities(
-        bool randomly = false, const std::vector<std::vector<int>> &weights =
-                                   {}); // initializes the transition probabilities randomly.
-                                        // Returns true if successful, false otherwise
+    void initialize_trainsition_probabilities(
+        int num_states, bool randomly = false,
+        const std::vector<std::vector<double>> &weights =
+            {}); // initializes the transition probabilities randomly or with
+                 // a constructor Returns true if successful, false otherwise
+
     // Called to initialize_trainsition_probabilities in main
-    bool initialize_emission_probabilities(bool randomly = false,
-                                           const std::vector<std::vector<int>> &weights = {});
+    void initialize_emission_probabilities(int num_states, bool randomly = false,
+                                           const std::vector<std::vector<double>> &weights = {});
 
   private:
     std::filesystem::path training_dataset;
@@ -37,8 +41,19 @@ class HMM
     // Pointer to the dataset. Allocated in the constructor and deallocated in the destructor
     // Using the heap so that the code can be used for much bigger datasets than the memory can hold
     // at once. The data can be loaded in batches in the train function
-    std::vector<char> data;
+    std::vector<T> data;
 
+    // hash-map to store state to index mapping
+    std::unordered_set<T> states; // Maps each state to a unique index for easy access in
+                                  // the transition and emission probability matrices
+
+    bool constructor_initialized = false; // flag to check if the constructor has been called and
+                                          // the parameters have been initialized
+                                          //
+
+    // vector to store the unique states in the dataset, index indicates the index of the state in
+    // the transition and emission probability matrices
+    std::vector<T> sorted_states;
     // NOTE: n x n matrix where n is the number of states in the HMM
     std::vector<std::vector<double>>
         trainsition_probabilities; // Matrix representing the transition probabilities between
