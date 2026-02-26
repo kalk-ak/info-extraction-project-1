@@ -234,7 +234,7 @@ void HMM<T>::initialize_trainsition_probabilities(int num_states, bool randomly,
 
 template <typename T>
 void HMM<T>::initialize_initial_state_probabilities(bool randomly,
-                                                    const std::vector<std::vector<double>> &weights)
+                                                    const std::vector<double> &weights)
 {
 
     if (not this->constructor_initialized)
@@ -266,8 +266,7 @@ void HMM<T>::initialize_initial_state_probabilities(bool randomly,
 
     if (not randomly)
     {
-        this->trainsition_probabilities = weights;
-        //
+        this->initial_state_probabilities = weights;
         // Simple just copy the values from weights (=) here is copy constructor for the vector of
         // vectors
     }
@@ -284,10 +283,10 @@ void HMM<T>::initialize_initial_state_probabilities(bool randomly,
         std::mt19937 gen(rd());
 
         // assign equal probabilities for all states
-        int probabilities = 1 / num_states;
+        double prob = 1.0 / num_states;
 
         for (auto &i : this->initial_state_probabilities)
-            i = probabilities;
+            i = prob;
     }
 
     this->initial_state_probabilities_initialized = true;
@@ -322,5 +321,31 @@ template <typename T> void HMM<T>::train(int num_itterations)
             "train called with out initial state probabilities being initialized");
     }
 
+    // cahce the number of states and the number of steps in the dataset for easy access
+    const size_t numStates = this->states.size();
+    const size_t numSteps = this->data.size();
+
+    // initialize the alpha vector
+    this->alpha.assign(numStates, std::vector<double>(numSteps + 1, 0.0));
+    alpha[0] = this->initial_state_probabilities; // set the first column of alpha to the initial
+                                                  // state probabilities
+
+    // initialize hte beta vector
+    this->beta.assign(numStates, std::vector<double>(numSteps + 1, 0.0));
+    this->beta[numSteps] = std::vector<double>(numStates, 1.0); // set the last column of beta to 1s
+
+    // initialize the gamma vector
+    this->gamma.assign(numStates, std::vector<double>(numSteps, 0.0));
+
     // --------------------BAUM WELCH ALGORITHM--------------------
+    this->calculate_alpha_beta_gamma();
+}
+
+template <typename T> void HMM<T>::calculate_alpha_beta_gamma()
+{
+    // TODO: Calculate the forward probabilities (alpha) first
+
+    // TODO: Calculate the backward probabilities (beta) next
+
+    // TODO: Calculate the gamma probabilities
 }
