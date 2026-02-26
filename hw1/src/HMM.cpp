@@ -73,6 +73,14 @@ HMM<T>::HMM(std::filesystem::path training_dataset) : training_dataset(training_
         this->sorted_states = std::vector<T>(this->states.begin(), this->states.end());
         std::sort(this->sorted_states.begin(), this->sorted_states.end());
 
+        // Create a hashmap to store the mapping from state to index for easy access in the train
+        // function
+        int length = this->sorted_states.size();
+        for (size_t i = 0; i < length; i++)
+        {
+            this->states_to_index[this->sorted_states[i]] = i;
+        }
+
         // print a summary of the dataset
         std::stringstream output;
         output << "Dataset loaded successfully. Total entries: " << index << "\n"
@@ -80,15 +88,6 @@ HMM<T>::HMM(std::filesystem::path training_dataset) : training_dataset(training_
                << "Skipped entries: " << skipped_entries << std::endl;
 
         spdlog::info(output);
-
-        // -----------------------INITILIZE THE PARAMETERS-----------------------
-        // TODO: Done in the main function by calling the initialize_trainsition_probabilities and
-        // initialize_emission_probabilities
-
-        // --------------CALCULATE THE ALPHA, BETA AND GAMMA PROBABILITIES--------
-        // Then calculate the alpha, beta and gamma probabilities for the current dataset using the
-        // initilized parameters
-        this->calculate_alpha_beta_gamma();
 
         // set the flag to true to indicate that the constructor has been called and the parameters
         // have been initialized
@@ -150,7 +149,7 @@ void HMM<T>::initialize_emission_probabilities(int num_states, bool randomly,
             for (int j = 0; j < size; ++j)
             {
                 double probability = dis(gen);
-                distribution[i][i] = probability;
+                distribution[i][j] = probability;
                 normalization_sum += probability;
             }
 
@@ -322,30 +321,125 @@ template <typename T> void HMM<T>::train(int num_itterations)
     }
 
     // cahce the number of states and the number of steps in the dataset for easy access
-    const size_t numStates = this->states.size();
+    const size_t numStates =
+        this->trainsition_probabilities.size(); // Use the actual number of HMM states
     const size_t numSteps = this->data.size();
 
-    // initialize the alpha vector
-    this->alpha.assign(numStates, std::vector<double>(numSteps + 1, 0.0));
-    alpha[0] = this->initial_state_probabilities; // set the first column of alpha to the initial
-                                                  // state probabilities
-
-    // initialize hte beta vector
-    this->beta.assign(numStates, std::vector<double>(numSteps + 1, 0.0));
-    this->beta[numSteps] = std::vector<double>(numStates, 1.0); // set the last column of beta to 1s
-
-    // initialize the gamma vector
+    // initialize the alpha, beta, and gamma vectors
+    this->alpha.assign(numStates, std::vector<double>(numSteps, 0.0));
+    this->beta.assign(numStates, std::vector<double>(numSteps, 0.0));
     this->gamma.assign(numStates, std::vector<double>(numSteps, 0.0));
 
-    // --------------------BAUM WELCH ALGORITHM--------------------
-    this->calculate_alpha_beta_gamma();
+    // Initialize alpha at t=0 in LOG SPACE
+    int first_char_index = this->states_to_index[this->data[0]];
+    for (size_t state = 0; state < numStates; state++)
+    {
+        // log(initial_prob * emission_prob) -> log(initial_prob) + log(emission_prob)
+        this->alpha[state][0] = std::log(this->initial_state_probabilities[state]) +
+                                std::log(this->emission_probabilities[state][first_char_index]);
+    }
+
+    // Initialize beta at the final time step in LOG SPACE
+    for (size_t state = 0; state < numStates; state++)
+        this->beta[state][numSteps - 1] = 0.0; // log(1.0) = 0.0
+
+    // Run Baum-Welch
+    for (int iter = 0; iter < num_itterations; iter++)
+    {
+        this->calculate_alpha_beta_gamma();
+        // PERF: The code was written in C++ to make this part of the code fast
+        // TODO: Make sure to implement and uncomment update_transition adn update_emission
+        // this->update_transition();
+        // this->update_emission();
+    }
+}
+//
+// Helper function to compute log(a + b) given log(a) and log(b) to avoid underflow issues
+double log_sum_exp(double a, double b)
+{
+    if (a == -std::numeric_limits<double>::infinity())
+        return b;
+    else if (b == -std::numeric_limits<double>::infinity())
+        return a;
+    else if (a > b)
+        return a + std::log(1.0 + std::exp(b - a));
+    else
+        return b + std::log(1.0 + std::exp(a - b));
 }
 
+// PERF: Optimized to run as fast as possible
 template <typename T> void HMM<T>::calculate_alpha_beta_gamma()
 {
-    // TODO: Calculate the forward probabilities (alpha) first
+    int length_of_data = this->data.size();
+    int length_of_states = this->trainsition_probabilities.size();
 
-    // TODO: Calculate the backward probabilities (beta) next
+    // Calculate the forward probabilities (alpha)
+    for (int i = 1; i < length_of_data; i++)
+    {
+        // Cache the current data and its index
+        T current_observation = this->data[i];
+        int current_observation_index = this->states_to_index[current_observation];
 
-    // TODO: Calculate the gamma probabilities
+        for (int j = 0; j < length_of_states; j++)
+        {
+            double log_sum = -std::numeric_limits<double>::infinity(); // Represents log(0)
+
+            for (int k = 0; k < length_of_states; k++)
+            {
+                // alpha[k][i-1] * transition[k][j] := log_alpha + log_transition
+                double current_val =
+                    alpha[k][i - 1] + std::log(this->trainsition_probabilities[k][j]);
+
+                log_sum = log_sum_exp(log_sum, current_val);
+            }
+
+            // Multiply by emission prob := add log_emission
+            alpha[j][i] =
+                log_sum + std::log(this->emission_probabilities[j][current_observation_index]);
+        }
+    }
+
+    // Calculate the backward probabilities (beta) next
+    for (int i = length_of_data - 1; i >= 0; i++)
+    {
+        // Cache the current data and its index
+        T current_observation = this->data[i];
+        int current_observation_index = this->states_to_index[current_observation];
+
+        for (int j = 0; j < length_of_states; j++)
+        {
+            double log_sum = -std::numeric_limits<double>::infinity(); // Represents log(0)
+
+            for (int k = 0; k < length_of_states; k++)
+            {
+                // beta[k][i+1] * transition[j][k] * emission[k][current_observation_index]
+                // := log_beta + log_transition + log_emission
+                double current_val =
+                    beta[k][i + 1] + std::log(this->trainsition_probabilities[j][k]) +
+                    std::log(this->emission_probabilities[k][current_observation_index]);
+
+                log_sum = log_sum_exp(log_sum, current_val);
+            }
+
+            beta[j][i] = log_sum;
+        }
+    }
+
+    // Calculate the state probabilities (gamma) next
+    for (int i = 0; i < length_of_data; i++)
+    {
+        for (int j = 0; j < length_of_states; j++)
+        {
+            // gamma[j][i] = alpha[j][i] * beta[j][i] := log_alpha + log_beta
+            gamma[j][i] = alpha[j][i] + beta[j][i];
+        }
+    }
+}
+
+template <typename T> void HMM<T>::update_transition()
+{
+}
+
+template <typename T> void HMM<T>::update_emission()
+{
 }
