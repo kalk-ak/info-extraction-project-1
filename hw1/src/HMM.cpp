@@ -4,6 +4,7 @@
 #include <exception>
 #include <filesystem>
 #include <fstream>
+#include <ios>
 #include <iostream>
 #include <random>
 #include <spdlog/spdlog.h>
@@ -30,70 +31,64 @@ HMM<T>::HMM(std::filesystem::path training_dataset) : training_dataset(training_
 
     // variable to store what is read from the file
     T token;
-    long long index = 0; // assuming that the dataset is not bigger than 2^63 characters, which is a
+    long long index = 0; // assuming that the dataset is not bigger than 2^63 token, which is a
                          // reasonable assumption for this assignment
 
     long long skipped_entries =
         0; // to keep track of the number of entries that are skipped due to errors
 
-    // have a set to check for unique characters in the dataset and use it to determine the number
+    // have a set to check for unique token in the dataset and use it to determine the number
     // of states and observations in the HMM
     // ISSUE: one possible issue with this approach is that if a data has never appeared in the
     // training dataset then there would be no state for it according to this initialization.
     // The transition and emission probabilities for that state would be zero but since we are not
-    // doing smoothing for the Homework, this is the same as leaving the char from our HMM state and
-    // assign it a probabilities of zero if it showes up in the test data and not in training
+    // doing smoothing for the Homework, this is the same as leaving the token from our HMM state
+    // and assign it a probabilities of zero if it showes up in the test data and not in training
 
+    // Count the white spaces
+    file >> std::noskipws;
     while (file >> token)
     {
-
-        if (token.size() != 1)
-        {
-            std::cerr << "Error: Expected single character, got: " << token << " at index" << index
-                      << std::endl;
-
-            continue; // Skip this entry and continue with the next one
-        }
 
         // index to keep track of the number of data read
         index += 1;
 
         // populate the dataset
-        this->data.push_back(token[0]);
+        this->data.push_back(token);
 
-        // check if the character has been seen before, if not add it to the state_to_index map and
+        // check if the token has been seen before, if not add it to the state_to_index map and
         // assign it a unique index
-        if (this->states.find(token[0]) == this->states.end())
+        if (this->states.find(token) == this->states.end())
         {
             // add it and assign a new index
             this->states.insert(token);
         }
+    }
 
-        // Store all the sets in a vector that is sorted
-        this->sorted_states = std::vector<T>(this->states.begin(), this->states.end());
-        std::sort(this->sorted_states.begin(), this->sorted_states.end());
+    // Store all the sets in a vector that is sorted
+    this->sorted_states = std::vector<T>(this->states.begin(), this->states.end());
+    std::sort(this->sorted_states.begin(), this->sorted_states.end());
 
-        // Create a hashmap to store the mapping from state to index for easy access in the train
-        // function
-        int length = this->sorted_states.size();
-        for (size_t i = 0; i < length; i++)
-        {
-            this->states_to_index[this->sorted_states[i]] = i;
-        }
+    // Create a hashmap to store the mapping from state to index for easy access in the train
+    // function
+    int length = this->sorted_states.size();
+    for (size_t i = 0; i < length; i++)
+    {
+        this->states_to_index[this->sorted_states[i]] = i;
+    }
 
-        // print a summary of the dataset
-        std::stringstream output;
-        output << "Dataset loaded successfully. Total entries: " << index << "\n"
-               << "Unique characters: " << this->sorted_states.size() << "\n"
-               << "Skipped entries: " << skipped_entries << std::endl;
+    // print a summary of the dataset
+    std::stringstream output;
+    output << "Dataset loaded successfully. Total entries: " << index << "\n"
+           << "Unique Token: " << this->sorted_states.size() << "\n"
+           << "Skipped entries: " << skipped_entries << std::endl;
 
-        spdlog::info(output);
+    spdlog::info(output.str());
 
-        // set the flag to true to indicate that the constructor has been called and the parameters
-        // have been initialized
-        this->constructor_initialized = true;
-    };
-}
+    // set the flag to true to indicate that the constructor has been called and the parameters
+    // have been initialized
+    this->constructor_initialized = true;
+};
 
 template <typename T>
 void HMM<T>::initialize_emission_probabilities(int num_states, bool randomly,
@@ -129,6 +124,10 @@ void HMM<T>::initialize_emission_probabilities(int num_states, bool randomly,
     }
     else
     {
+        // Allocate memory
+        this->emission_probabilities.assign(num_states,
+                                            std::vector<double>(this->states.size(), 0.0));
+
         // variable to modify the original emission probabilities
         std::vector<std::vector<double>> &distribution = this->emission_probabilities;
 
@@ -141,7 +140,7 @@ void HMM<T>::initialize_emission_probabilities(int num_states, bool randomly,
         std::uniform_real_distribution<double> dis(0.01, 1.0);
 
         // Generate random weights and calculate the total sum
-        int size = this->states.size(); // number of unique characters in the dataset, which is the
+        int size = this->states.size(); // number of unique token in the dataset, which is the
                                         // number of states and observations in the HMM
         for (int i = 0; i < num_states; ++i)
         {
@@ -197,6 +196,9 @@ void HMM<T>::initialize_trainsition_probabilities(int num_states, bool randomly,
     }
     else
     {
+        // allocate the memory:
+        this->trainsition_probabilities.assign(num_states, std::vector<double>(num_states, 0.0));
+
         // variable to modify the original transition probabilities
         std::vector<std::vector<double>> &distribution = this->trainsition_probabilities;
 
@@ -289,7 +291,23 @@ void HMM<T>::initialize_initial_state_probabilities(bool randomly,
     this->initial_state_probabilities_initialized = true;
 }
 
-template <typename T> void HMM<T>::train(int num_itterations)
+//
+// Helper function to compute log(a + b) given log(a) and log(b) to avoid underflow issues
+double log_sum_exp(double a, double b)
+{
+    if (a == -std::numeric_limits<double>::infinity())
+        return b;
+    else if (b == -std::numeric_limits<double>::infinity())
+        return a;
+    else if (a > b)
+        return a + std::log(1.0 + std::exp(b - a));
+    else
+        return b + std::log(1.0 + std::exp(a - b));
+}
+
+template <typename T>
+void HMM<T>::train(int num_itterations, const std::filesystem::path &test_dataset_path,
+                   const std::string &log_csv_path)
 {
     // -------------------- CHECK IF EVERYTING IS INITIALIZED--------------------
     if (not this->constructor_initialized)
@@ -328,48 +346,80 @@ template <typename T> void HMM<T>::train(int num_itterations)
     this->beta.assign(num_states, std::vector<double>(len_data, 0.0));
     this->gamma.assign(num_states, std::vector<double>(len_data, 0.0));
 
-    // Initialize alpha at t=0 in LOG SPACE
-    int first_char_index = this->states_to_index[this->data[0]];
-    for (size_t state = 0; state < num_states; state++)
-    {
-        // log(initial_prob * emission_prob) -> log(initial_prob) + log(emission_prob)
-        this->alpha[state][0] = std::log(this->initial_state_probabilities[state]) +
-                                std::log(this->emission_probabilities[state][first_char_index]);
-    }
+    // ----------------------- CSV loggere for plotting -----------------------
+    std::ofstream log_file(log_csv_path);
+    log_file << "k,train_log_prob,test_log_prob";
 
-    // Initialize beta at the final time step in LOG SPACE
-    for (size_t state = 0; state < num_states; state++)
-        this->beta[state][len_data - 1] = 0.0; // log(1.0) = 0.0
+    // Dynamically create headers for every single state and token (e.g., q_a_0, q_a_1)
+    for (const T &token : this->sorted_states)
+    {
+        for (size_t s = 0; s < num_states; s++)
+        {
+            // If the token is a space, print 'space' so the CSV header doesn't break
+            if (token == ' ')
+                log_file << ",q_space_" << s;
+            else
+                log_file << ",q_" << token << "_" << s;
+        }
+    }
+    log_file << "\n";
 
     // Run Baum-Welch
-    for (int iter = 0; iter < num_itterations; iter++)
+    for (int iter = 1; iter <= num_itterations; iter++)
     {
         this->calculate_alpha_beta_gamma();
-        // PERF: The code was written in C++ to make this part of the code fast
-        // TODO: Make sure to implement and uncomment update_transition adn update_emission
-        // this->update_transition();
-        // this->update_emission();
+        this->update_transition();
+        this->update_emission();
+
+        // Calculate Log-Probs
+        double train_log_prob = -std::numeric_limits<double>::infinity();
+        for (size_t s = 0; s < num_states; s++)
+        {
+            train_log_prob = log_sum_exp(train_log_prob, this->alpha[s][len_data - 1]);
+        }
+        train_log_prob /= len_data;
+        double test_log_prob = this->evaluate(test_data);
+
+        // ----------------------- LOGGING EVERY TOKEN -----------------------
+        log_file << iter << "," << train_log_prob << "," << test_log_prob;
+
+        // Loop through all tokens and all states using the pre-existing sorted_states
+        for (size_t t_idx = 0; t_idx < this->sorted_states.size(); t_idx++)
+        {
+            for (size_t s = 0; s < num_states; s++)
+            {
+                log_file << "," << this->emission_probabilities[s][t_idx];
+            }
+        }
+        log_file << "\n";
+
+        if (iter % 10 == 0)
+        {
+            spdlog::info("Iteration {} | Train LL: {:.4f} | Test LL: {:.4f}", iter, train_log_prob,
+                         test_log_prob);
+        }
     }
 }
 //
-// Helper function to compute log(a + b) given log(a) and log(b) to avoid underflow issues
-double log_sum_exp(double a, double b)
-{
-    if (a == -std::numeric_limits<double>::infinity())
-        return b;
-    else if (b == -std::numeric_limits<double>::infinity())
-        return a;
-    else if (a > b)
-        return a + std::log(1.0 + std::exp(b - a));
-    else
-        return b + std::log(1.0 + std::exp(a - b));
-}
 
 // PERF: Optimized to run as fast as possible
 template <typename T> void HMM<T>::calculate_alpha_beta_gamma()
 {
+    // Cache the length_of_states and length_of_data
     int length_of_data = this->data.size();
     int length_of_states = this->trainsition_probabilities.size();
+
+    // Initialize the alpha and beta matrices in LOG SPACE before starting the current
+    int first_token_index = this->states_to_index[this->data[0]];
+    for (size_t state = 0; state < length_of_states; state++)
+    {
+        // initialize the alpha at t=0 in LOG SPACE
+        this->alpha[state][0] = std::log(this->initial_state_probabilities[state]) +
+                                std::log(this->emission_probabilities[state][first_token_index]);
+
+        // Initialize the beta at the final time step in LOG SPACE
+        this->beta[state][length_of_data - 1] = 0.0;
+    }
 
     // Calculate the forward probabilities (alpha)
     for (int i = 1; i < length_of_data; i++)
@@ -493,7 +543,7 @@ template <typename T> void HMM<T>::update_emission()
             // Add to the total expected time spent in state j (Denominator)
             log_denominator = log_sum_exp(log_denominator, current_gamma);
 
-            // Add to the expected time spent in state j emitting specific character (Numerator)
+            // Add to the expected time spent in state j emitting specific token (Numerator)
             int obs_index = this->states_to_index[this->data[t]];
             log_numerators[obs_index] = log_sum_exp(log_numerators[obs_index], current_gamma);
         }
@@ -509,3 +559,125 @@ template <typename T> void HMM<T>::update_emission()
         }
     }
 }
+
+template <typename T> double HMM<T>::test(const std::filesystem::path &test_dataset_path)
+{
+    // ----------------------- STANDALONE TESTING -----------------------
+    std::ifstream test_file(test_dataset_path);
+
+    // ISSUE: check if file exists and is open
+    if (!test_file)
+    {
+        spdlog::critical("Error opening test file: {}", test_dataset_path.string());
+        throw std::runtime_error("Failed to open test dataset.");
+    }
+
+    std::vector<T> test_data;
+    T token;
+
+    // Read the test data into memory
+    test_file >> std::noskipws; // Don't skip whitespace characters
+    while (test_file >> token)
+    {
+        test_data.push_back(token);
+    }
+
+    spdlog::info("Test dataset loaded. Running forward pass evaluation...");
+
+    // PERF: reuse the highly optimized evaluate method
+    return this->evaluate(test_data);
+}
+
+template <typename T> double HMM<T>::evaluate(const std::vector<T> &eval_data)
+{
+    int len_data = eval_data.size();
+    if (len_data == 0)
+        return 0.0;
+
+    int num_states = this->trainsition_probabilities.size();
+    std::vector<std::vector<double>> eval_alpha(num_states, std::vector<double>(len_data, 0.0));
+
+    int first_token_index = this->states_to_index[eval_data[0]];
+    for (int state = 0; state < num_states; state++)
+    {
+        eval_alpha[state][0] = std::log(this->initial_state_probabilities[state]) +
+                               std::log(this->emission_probabilities[state][first_token_index]);
+    }
+
+    for (int t = 1; t < len_data; t++)
+    {
+        int obs_idx = this->states_to_index[eval_data[t]];
+        for (int j = 0; j < num_states; j++)
+        {
+            double log_sum = -std::numeric_limits<double>::infinity();
+            for (int k = 0; k < num_states; k++)
+            {
+                log_sum = log_sum_exp(log_sum, eval_alpha[k][t - 1] +
+                                                   std::log(this->trainsition_probabilities[k][j]));
+            }
+            eval_alpha[j][t] = log_sum + std::log(this->emission_probabilities[j][obs_idx]);
+        }
+    }
+
+    double final_log_prob = -std::numeric_limits<double>::infinity();
+    for (int state = 0; state < num_states; state++)
+    {
+        final_log_prob = log_sum_exp(final_log_prob, eval_alpha[state][len_data - 1]);
+    }
+
+    return final_log_prob / len_data;
+}
+
+template <typename T> void HMM<T>::save_model(const std::filesystem::path &filename) const
+{
+    std::ofstream out(filename);
+    int num_states = this->trainsition_probabilities.size();
+    int num_symbols = this->sorted_states.size();
+
+    out << num_states << " " << num_symbols << "\n";
+
+    for (int i = 0; i < num_states; i++)
+    {
+        for (int j = 0; j < num_states; j++)
+            out << this->trainsition_probabilities[i][j] << " ";
+        out << "\n";
+    }
+    for (int i = 0; i < num_states; i++)
+    {
+        for (int j = 0; j < num_symbols; j++)
+            out << this->emission_probabilities[i][j] << " ";
+        out << "\n";
+    }
+    spdlog::info("Model saved to {}", filename.string());
+}
+
+template <typename T> void HMM<T>::load_model(const std::filesystem::path &filename)
+{
+    std::ifstream in(filename);
+    if (!in)
+        throw std::runtime_error("Cannot open model file.");
+
+    int num_states, num_symbols;
+    in >> num_states >> num_symbols;
+
+    this->trainsition_probabilities.assign(num_states, std::vector<double>(num_states, 0.0));
+    for (int i = 0; i < num_states; i++)
+    {
+        for (int j = 0; j < num_states; j++)
+            in >> this->trainsition_probabilities[i][j];
+    }
+
+    this->emission_probabilities.assign(num_states, std::vector<double>(num_symbols, 0.0));
+    for (int i = 0; i < num_states; i++)
+    {
+        for (int j = 0; j < num_symbols; j++)
+            in >> this->emission_probabilities[i][j];
+    }
+
+    this->transition_initialized = true;
+    this->emission_initialized = true;
+    spdlog::info("Model loaded from {}", filename.string());
+}
+
+// Add this to the absolute bottom of HMM.cpp, after all functions
+template class HMM<char>;
