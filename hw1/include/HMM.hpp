@@ -25,6 +25,10 @@ template <typename T> class HMM
     void print_parameters() const; // for debugging purposes, prints the transition and emission
                                    // probabilities to the console
 
+    void initialize_initial_state_probabilities(
+        bool randomly = false, const std::vector<double> &weights = {}); // initializes the
+                                                                         // initial state
+                                                                         // probabilities
     void initialize_trainsition_probabilities(
         int num_states, bool randomly = false,
         const std::vector<std::vector<double>> &weights =
@@ -49,11 +53,20 @@ template <typename T> class HMM
 
     bool constructor_initialized = false; // flag to check if the constructor has been called and
                                           // the parameters have been initialized
-                                          //
+    bool transition_initialized = false;
+    bool emission_initialized = false;
+    bool initial_state_probabilities_initialized = false;
 
     // vector to store the unique states in the dataset, index indicates the index of the state in
     // the transition and emission probability matrices
     std::vector<T> sorted_states;
+
+    std::unordered_map<T, int>
+        states_to_index; // Maps each state to a unique index for easy access in the transition and
+                         // emission probability matrices
+
+    std::vector<double> initial_state_probabilities; // 'pi' in HMM literature
+
     // NOTE: n x n matrix where n is the number of states in the HMM
     std::vector<std::vector<double>>
         trainsition_probabilities; // Matrix representing the transition probabilities between
@@ -66,9 +79,10 @@ template <typename T> class HMM
 
     // All these probabilities are initilized when the Constructor is called and updated when
     // the train function is called
-    std::vector<double> alpha; // cache for forward probabilities
-    std::vector<double> beta;  // cache for backward probabilities
-    std::vector<double> gamma; // cache for state probabilities
+
+    std::vector<std::vector<double>> alpha; // cache for forward probabilities
+    std::vector<std::vector<double>> beta;
+    std::vector<std::vector<double>> gamma; // cache for state probabilities
 
     // function to calculate the alpha, beta and gamma probabilities for the current dataset. Called
     // from the train function

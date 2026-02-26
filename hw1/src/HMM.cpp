@@ -283,9 +283,7 @@ void HMM<T>::initialize_initial_state_probabilities(bool randomly,
 
         // assign equal probabilities for all states
         double prob = 1.0 / num_states;
-
-        for (auto &i : this->initial_state_probabilities)
-            i = prob;
+        this->initial_state_probabilities.assign(num_states, prob);
     }
 
     this->initial_state_probabilities_initialized = true;
